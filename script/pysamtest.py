@@ -33,11 +33,12 @@ def main():
         print chrom
         for row in c.execute('SELECT * FROM '+chrom+' WHERE '+chrom+'.length >= 5 ORDER BY length, start'):
             [start, end,length,ID] = row
+#            if start < 43421992-100 or end > 43421992+100: continue
             print '\n###############################\n'+ID+', '+chrom+':'+str(start)+'-'+str(end)+', '+str(length)+'bp'
             for bamname in bamfiles:
                 overlaps = processbam(row,bamname,chrom,referencefa)#sys.argv[1]
                 total_overlaps += overlaps
-    bam.close()
+    #bam.close()
     conn.close()
     referencefa.close()
     print 'we found', total_overlaps, 'overlapping reads'
@@ -52,40 +53,6 @@ def processbam(row,bamname,chrom,referencefa):
         header = '' 
         header += bamname +' '+str(bam.count(chrom, start-plusminus-1, end+plusminus))+' reads within +-'+str(plusminus)+'bp,'
 
-        #oldstuff
-        #overlaps = 0
-        #duplicate_overlaps=0
-        #pp = 0
-        #for read in bam.fetch(chrom, start-plusminus-1, end+plusminus):
-        #    if read.is_proper_pair: pp +=1
-        #    if not read.mate_is_unmapped and read.tlen > -1000 and read.tlen < 1000 and read.tlen!= 0:
-        #        bam2 = pysam.Samfile(bamname,'rb')#sys.argv[1]
-        #        mate=bam2.mate(read)
-        #        bam2.close()
-        #            #print read.qname,                    #print read.pos,                    #print mate.pos,                    #print read.tlen                #print read.qname                #print read.pos,                #print read.pos+read.tlen                #print mate.pos,                #print mate.pos+mate.tlen
-        #        if read.pos < mate.pos: #the read maps at lower genomic coordinate than the mate        ie: read---> <---mate
-        #            if read.pos <= end and read.pos+read.tlen >= start:
-        #                #print read.qname+' r1r2-fragment-overlap'
-        #                if not read.is_duplicate:overlaps += 1
-        #                else: duplicate_overlaps+=1
-        #        elif read.pos > mate.pos: #the read maps at higher genomic coordinate than the mate     ie: mate---> <---read
-        #            if mate.pos <= end and mate.pos+mate.tlen >= start:
-        #                #print read.qname+' r2r1-fragment-overlap'
-        #                if not read.is_duplicate:overlaps += 1
-        #                else: duplicate_overlaps+=1
-        #        elif read.pos == mate.pos: #the read maps at the same genomic coordinate than the mate ie isize same as readlength?  ie: mate<--->read or read<--->mate
-        #            if read.pos <= end and read.pos+read.tlen >= start:
-        #                if not read.is_duplicate:overlaps += 1
-        #                else: duplicate_overlaps+=1
-        #            #print read
-        #            #print mate                
-        #        else:
-        #            print read.pos,
-        #            print mate.pos
-        #    else: pass #mate unmapped
-        #header += str(pp)+' properpairs, '+str(overlaps)+' unique fragment overlaps with target ('+str(duplicate_overlaps)+'dups).'
-        #if overlaps/2 >= 4: print header
-        #else: return overlaps
         overlaps = 0
         print header
 
@@ -154,27 +121,57 @@ def processbam(row,bamname,chrom,referencefa):
 
         #get consensus
         for position in positionsArray:
+            by_relpos[position['relpos']]['ConsensusSequence'] = ''
             base_count = {'total':0}
+
             for read_name in reads.keys():
                 if read_name != 'readDepth' and read_name != 'position' and read_name != 'relpos':
                     base = position[read_name]
                     base_count['total']+=1
                     try: base_count[base] +=1
                     except KeyError: base_count[base] =1
-            by_relpos[position['relpos']]['ConsensusSequence'] = ''
+
+
             for base,count in base_count.iteritems():
                 if base == 'total': continue
-                by_relpos[position['relpos']]['ConsensusSequence'] += base+'='+str(round(100*float(count)/base_count['total'],0))+'%,'
-            by_relpos[position['relpos']]['ConsensusSequence'] += ' '
+                by_relpos[position['relpos']]['ConsensusSequence'] += base+'='+str(round(100*float(count)/base_count['total'],0))+','#+'%,'
+            #by_relpos[position['relpos']]['ConsensusSequence'] += ' '
 
 
         # Print graphical output
-        #for read_name in ['Relative_position','Reference_Sequence']+reads.keys()+['ConsensusSequence']:
-        for read_name in ['Relative_position','Reference_Sequence']+['ConsensusSequence']:
+        for read_name in ['Relative_position','Reference_Sequence']+reads.keys()+['ConsensusSequence']:
+        #for read_name in ['Relative_position','Reference_Sequence']+['ConsensusSequence']:
                 print read_name+'\t',
                 if read_name =='Relative_position': print '\t\t\t',
                 if read_name =='Reference_Sequence':print '\t\t\t',
-                if read_name =='ConsensusSequence':print '\t\t\t',
+                if read_name =='ConsensusSequence':
+                    print '\t\t\t',
+                    for position in positions:
+                        try :bases = by_relpos[position][read_name]
+                        except KeyError: bases = None
+                        if bases:
+                            bases = bases.split(',')
+                            tmp = {}
+                            out = ''
+                            #print 'bases->',bases
+                            for base in bases[:-1]:
+                                base = base.split('=')
+                                perc = float(base[1])
+                                base = base[0]
+                                tmp[base] = perc
+                            for base,perc in tmp.iteritems():
+                                if perc > 65.0: out = base
+                                if perc > 35.0 and perc < 65.0:
+                                    if out: out += '/'+base
+                                    else:out += base
+                        else:out = 'NA'
+
+                        if out != by_relpos[position]['Reference_Sequence'] and read_name != 'Relative_position' and out != '.' and out != 'NA': color = RED
+                        else: color =''
+                        if len(out) < 2: out +=' '
+                        print color+out+ENDC+'\t',
+                    print ''                    
+                    continue
 
                 for position in positions:
 
